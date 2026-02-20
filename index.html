@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibe Data Dashboard</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React, ReactDOM, Recharts, and Icons via ESM modules -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom": "https://esm.sh/react-dom@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "recharts": "https://esm.sh/recharts@2.12.2?external=react,react-dom",
+        "lucide-react": "https://esm.sh/lucide-react@0.344.0?external=react,react-dom"
+      }
+    }
+    </script>
+    <style>
+      /* Smooth fade animation for switching tabs */
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-in {
+        animation: fadeIn 0.4s ease-out forwards;
+      }
+      /* Custom scrollbar for tables */
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #f1f5f9; 
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #cbd5e1; 
+        border-radius: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8; 
+      }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 h-screen overflow-hidden">
+    <div id="root" class="h-full"></div>
+
+    <script type="module">
+        import React, { useState, useMemo, useEffect } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
+            PieChart, Pie, Cell, LineChart, Line
+        } from 'recharts';
+        import { 
+            Upload, FileText, Trash2, Database, LayoutDashboard, ChevronRight, 
+            School, Users, GraduationCap, BookOpen, Activity, AlertTriangle, 
+            ChevronDown, UserX, Clock, Calendar, RefreshCw
+        } from 'lucide-react';
+
+        // --- Color Palettes ---
+        const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+        const SUSPENSION_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#06b6d4', '#6366f1', '#a855f7'];
+        const ABSENTEEISM_COLORS = ['#10b981', '#facc15', '#f97316', '#ef4444'];
+
+        // --- CSV Parsing Logic ---
+        const parseCSV = (text) => {
+            const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
+            if (lines.length < 2) return { headers: [], data: [] };
+            
+            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            
+            const data = lines.slice(1).map(line => {
+                const values = [];
+                let currentVal = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        values.push(currentVal.trim());
+                        currentVal = '';
+                    } else {
+                        currentVal += char;
+                    }
+                }
+                values.push(currentVal.trim());
+                const row = {};
+                headers.forEach((h, index) => {
+                    row[h] = values[index] || '';
+                });
+                return row;
+            });
+
+            return { headers, data };
+        };
+
+        // --- UI Components ---
+        const Card = ({ title, children, className = "" }) => (
+            React.createElement("div", { className: `bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col ${className}` },
+                title && React.createElement("h3", { className: "text-lg font-semibold text-slate-800 mb-4" }, title),
+                children
+            )
+        );
+
+        const StatCard = ({ title, value, icon: Icon, color = "blue", subtext }) => (
+            React.createElement("div", { className: "bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-start space-x-4 transition hover:shadow-md" },
+                React.createElement("div", { className: `p-3 rounded-lg bg-${color}-50 text-${color}-600` },
+                    React.createElement(Icon, { size: 24 })
+                ),
+                React.createElement("div", null,
+                    React.createElement("p", { className: "text-slate-500 text-sm font-medium" }, title),
+                    React.createElement("h3", { className: "text-2xl font-bold text-slate-800 mt-1" }, value),
+                    subtext && React.createElement("p", { className: "text-xs text-slate-400 mt-1" }, subtext)
+                )
+            )
+        );
+
+        // --- Specific Dashboard Views ---
+
+        // 1. Absenteeism Dashboard (Updated with Tooltip Percentage)
+        const AbsenteeismDashboard = ({ data }) => {
+            const stats = useMemo(() => {
+                const totalStudents = data.length;
+                let chronicCount = 0;
+                
+                const schools = {};
+                const grades = {};
+                const subGroups = { 
+                    'Special Ed': { total: 0, chronic: 0 }, 
+                    'General Ed': { total: 0, chronic: 0 } 
+                };
+                const ranges = { '0 Days': 0, '1-5 Days': 0, '6-10 Days': 0, '10+ Days': 0 };
+
+                data.forEach(d => {
+                    // Check Chronic Status
+                    const isChronic = d['attChronicAbsenteeism.chronicallyAbsent'] === '1' || d['attChronicAbsenteeism.chronicallyAbsent'] === 'Yes';
+                    if (isChronic) chronicCount++;
+
+                    // School Grouping
+                    const schoolName = d['sch.name'] || 'Unknown';
+                    if (!schools[schoolName]) schools[schoolName] = { name: schoolName, total: 0, chronic: 0 };
+                    schools[schoolName].total++;
+                    if (isChronic) schools[schoolName].chronic++;
+
+                    // Grade Grouping
+                    const grade = d['student.grade'] || 'N/A';
+                    if (!grades[grade]) grades[grade] = { name: grade, total: 0, chronic: 0 };
+                    grades[grade].total++;
+                    if (isChronic) grades[grade].chronic++;
+
+                    // Special Ed Grouping
+                    const isSped = ['1', 'Yes', 'true'].includes(d['activeEnrollment.specialEdStatus']);
+                    const groupKey = isSped ? 'Special Ed' : 'General Ed';
+                    subGroups[groupKey].total++;
+                    if (isChronic) subGroups[groupKey].chronic++;
+
+                    // Days Absent Logic
+                    const pct = parseFloat(d['attChronicAbsenteeism.absenteeismPercentage']) || 0;
+                    const scheduled = parseFloat(d['attChronicAbsenteeism.scheduledDays']) || 0;
+                    const daysAbsent = (pct / 100) * scheduled;
+
+                    if (daysAbsent < 0.5) ranges['0 Days']++;
+                    else if (daysAbsent <= 5) ranges['1-5 Days']++;
+                    else if (daysAbsent <= 10) ranges['6-10 Days']++;
+                    else ranges['10+ Days']++;
+                });
+
+                // Format School Data
+                // Added rate calculation here so it is available in the chart payload
+                const schoolData = Object.values(schools)
+                    .map(s => ({
+                        ...s,
+                        rate: ((s.chronic / s.total) * 100).toFixed(1)
+                    }))
+                    .sort((a, b) => b.total - a.total);
+                
+                // Format Grade Data (Logical Sort)
+                const gradeOrder = ['TK', 'KN', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+                const gradeData = Object.values(grades).map(g => ({ ...g, rate: (g.chronic / g.total) * 100 })).sort((a, b) => {
+                    const idxA = gradeOrder.indexOf(a.name); const idxB = gradeOrder.indexOf(b.name);
+                    return (idxA !== -1 && idxB !== -1) ? idxA - idxB : a.name.localeCompare(b.name);
+                });
+
+                // Format SubGroup Data
+                const subGroupData = Object.keys(subGroups).map(k => ({
+                    name: k,
+                    rate: parseFloat(((subGroups[k].chronic / subGroups[k].total) * 100).toFixed(1))
+                }));
+
+                // Updated Range Data to include percentage
+                const rangeData = Object.keys(ranges).map(k => ({ 
+                    name: k, 
+                    value: ranges[k],
+                    percentage: ((ranges[k] / totalStudents) * 100).toFixed(1)
+                }));
+
+                return { totalStudents, chronicCount, schoolData, gradeData, subGroupData, rangeData };
+            }, [data]);
+
+            return React.createElement("div", { className: "space-y-6 animate-fade-in pb-10" },
+                // Stats Row
+                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-4" },
+                    React.createElement(StatCard, { title: "Total Students", value: stats.totalStudents.toLocaleString(), icon: Users, color: "blue" }),
+                    React.createElement(StatCard, { title: "Chronically Absent", value: stats.chronicCount.toLocaleString(), subtext: `${((stats.chronicCount / stats.totalStudents) * 100).toFixed(1)}% Rate`, icon: Clock, color: "red" }),
+                    React.createElement(StatCard, { title: "Severe Absence (10+ Days)", value: stats.rangeData.find(r => r.name === '10+ Days')?.value.toLocaleString() || 0, icon: Calendar, color: "orange" })
+                ),
+
+                // Main Charts Row (School & Grade)
+                React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-6" },
+                    React.createElement(Card, { title: "Chronic Absenteeism by School" },
+                        React.createElement(ResponsiveContainer, { width: "100%", height: 350 },
+                            React.createElement(BarChart, { data: stats.schoolData, layout: "vertical", margin: { left: 40, right: 20 } },
+                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", horizontal: true, vertical: false }),
+                                React.createElement(XAxis, { type: "number" }),
+                                React.createElement(YAxis, { type: "category", dataKey: "name", width: 140, tick: { fontSize: 11 } }),
+                                // Tooltip updated to show percentage for Chronically Absent bars
+                                React.createElement(RechartsTooltip, { 
+                                    cursor: { fill: 'transparent' },
+                                    formatter: (value, name, item) => {
+                                        if (name === "Chronically Absent") {
+                                            return [`${value.toLocaleString()} (${item.payload.rate}%)`, name];
+                                        }
+                                        return [value.toLocaleString(), name];
+                                    }
+                                }),
+                                React.createElement(Legend, null),
+                                React.createElement(Bar, { dataKey: "total", name: "Total Students", fill: "#94a3b8", radius: [0, 4, 4, 0], barSize: 20 }),
+                                React.createElement(Bar, { dataKey: "chronic", name: "Chronically Absent", fill: "#ef4444", radius: [0, 4, 4, 0], barSize: 20 })
+                            )
+                        )
+                    ),
+                    React.createElement(Card, { title: "Chronic Rate by Grade Level (%)" },
+                        React.createElement(ResponsiveContainer, { width: "100%", height: 350 },
+                            React.createElement(BarChart, { data: stats.gradeData },
+                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false }),
+                                React.createElement(XAxis, { dataKey: "name" }),
+                                React.createElement(YAxis, { unit: "%" }),
+                                React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' }, formatter: (value) => `${value.toFixed(1)}%` }),
+                                React.createElement(Bar, { dataKey: "rate", name: "Chronic Rate", fill: "#8b5cf6", radius: [4, 4, 0, 0] })
+                            )
+                        )
+                    )
+                ),
+
+                // Secondary Charts Row (Days Absent & Subgroups)
+                React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-3 gap-6" },
+                    React.createElement(Card, { title: "Days Absent Groups", className: "lg:col-span-2" },
+                        React.createElement(ResponsiveContainer, { width: "100%", height: 300 },
+                            React.createElement(BarChart, { data: stats.rangeData },
+                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false }),
+                                React.createElement(XAxis, { dataKey: "name" }),
+                                React.createElement(YAxis, null),
+                                // Tooltip showing Percentage
+                                React.createElement(RechartsTooltip, { 
+                                    cursor: { fill: 'transparent' },
+                                    formatter: (value, name, item) => [`${value.toLocaleString()} (${item.payload.percentage}%)`, name]
+                                }),
+                                React.createElement(Bar, { dataKey: "value", name: "Students", radius: [4, 4, 0, 0] },
+                                    stats.rangeData.map((entry, index) => React.createElement(Cell, { key: `cell-${index}`, fill: ABSENTEEISM_COLORS[index % ABSENTEEISM_COLORS.length] }))
+                                )
+                            )
+                        )
+                    ),
+                    React.createElement(Card, { title: "SpEd vs GenEd Rate" },
+                        React.createElement(ResponsiveContainer, { width: "100%", height: 300 },
+                            React.createElement(BarChart, { data: stats.subGroupData },
+                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false }),
+                                React.createElement(XAxis, { dataKey: "name" }),
+                                React.createElement(YAxis, { unit: "%" }),
+                                React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' }, formatter: (value) => `${value}%` }),
+                                React.createElement(Bar, { dataKey: "rate", name: "Chronic Rate %", fill: "#f59e0b", radius: [4, 4, 0, 0], barSize: 40 })
+                            )
+                        )
+                    )
+                ),
+
+                // Detailed Table
+                React.createElement(Card, { title: "Chronic Rates by Site" },
+                    React.createElement("div", { className: "overflow-x-auto custom-scrollbar" },
+                        React.createElement("table", { className: "w-full text-sm text-left text-slate-600" },
+                            React.createElement("thead", { className: "text-xs text-slate-700 uppercase bg-slate-50" },
+                                React.createElement("tr", null,
+                                    React.createElement("th", { className: "px-4 py-3" }, "School Name"),
+                                    React.createElement("th", { className: "px-4 py-3 text-right" }, "Total"),
+                                    React.createElement("th", { className: "px-4 py-3 text-right" }, "Chronic Count"),
+                                    React.createElement("th", { className: "px-4 py-3 text-right" }, "Rate (%)")
+                                )
+                            ),
+                            React.createElement("tbody", null,
+                                stats.schoolData.map((school, i) => {
+                                    const rate = ((school.chronic / school.total) * 100);
+                                    return React.createElement("tr", { key: i, className: "border-b hover:bg-slate-50" },
+                                        React.createElement("td", { className: "px-4 py-3 font-medium" }, school.name),
+                                        React.createElement("td", { className: "px-4 py-3 text-right" }, school.total),
+                                        React.createElement("td", { className: "px-4 py-3 text-right" }, school.chronic),
+                                        React.createElement("td", { className: "px-4 py-3 text-right font-bold" },
+                                            React.createElement("span", { className: `px-2 py-1 rounded ${rate > 10 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}` },
+                                                rate.toFixed(1) + "%"
+                                            )
+                                        )
+                                    );
+                                })
+                            )
+                        )
+                    )
+                )
+            );
+        };
+
+        // 2. Suspension Dashboard (Existing)
+        const SuspensionDashboard = ({ data }) => {
+            const stats = useMemo(() => {
+                const totalIncidents = data.length;
+                const uniqueStudents = new Set(data.map(d => d['student.studentNumber'])).size;
+                const schools = {};
+                
+                data.forEach(d => {
+                    const name = d['sch.name'] || 'Unknown';
+                    if (!schools[name]) schools[name] = { name, total: 0, students: new Set() };
+                    schools[name].total += 1;
+                    if (d['student.studentNumber']) schools[name].students.add(d['student.studentNumber']);
+                });
+                
+                const schoolData = Object.values(schools)
+                    .map(s => ({ name: s.name, total: s.total, unique: s.students.size }))
+                    .sort((a, b) => b.total - a.total);
+                
+                const violations = {};
+                data.forEach(d => {
+                    const type = d['behaviorDetail.stateEventName'] || d['behaviorDetail.eventName'] || 'Unknown';
+                    violations[type] = (violations[type] || 0) + 1;
+                });
+                const violationData = Object.keys(violations)
+                    .map(k => ({ name: k, value: violations[k] }))
+                    .sort((a, b) => b.value - a.value);
+
+                return { totalIncidents, uniqueStudents, schoolData, violationData };
+            }, [data]);
+
+            return React.createElement("div", { className: "space-y-6 animate-fade-in pb-10" },
+                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-4" },
+                    React.createElement(StatCard, { title: "Total Suspensions", value: stats.totalIncidents.toLocaleString(), icon: AlertTriangle, color: "red", subtext: "Total incidents recorded" }),
+                    React.createElement(StatCard, { title: "Unique Students", value: stats.uniqueStudents.toLocaleString(), icon: UserX, color: "orange", subtext: `${((stats.uniqueStudents / stats.totalIncidents) * 100).toFixed(1)}% unique rate` }),
+                    React.createElement(StatCard, { title: "Sites Reporting", value: stats.schoolData.length, icon: School, color: "slate" })
+                ),
+                React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-6" },
+                    React.createElement(Card, { title: "Suspensions by School Site" },
+                        React.createElement(ResponsiveContainer, { width: "100%", height: 350 },
+                            React.createElement(BarChart, { data: stats.schoolData, layout: "vertical", margin: { left: 40, right: 20 } },
+                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", horizontal: true, vertical: false }),
+                                React.createElement(XAxis, { type: "number" }),
+                                React.createElement(YAxis, { type: "category", dataKey: "name", width: 140, tick: { fontSize: 11 } }),
+                                React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' } }),
+                                React.createElement(Legend, null),
+                                React.createElement(Bar, { dataKey: "total", name: "Total Incidents", fill: "#ef4444", radius: [0, 4, 4, 0], barSize: 20 }),
+                                React.createElement(Bar, { dataKey: "unique", name: "Unique Students", fill: "#f97316", radius: [0, 4, 4, 0], barSize: 20 })
+                            )
+                        )
+                    ),
+                    React.createElement(Card, { title: "Top 5 Suspension Types" },
+                        React.createElement(ResponsiveContainer, { width: "100%", height: 350 },
+                            React.createElement(PieChart, null,
+                                React.createElement(Pie, { data: stats.violationData.slice(0, 5), cx: "50%", cy: "50%", innerRadius: 60, outerRadius: 100, paddingAngle: 2, dataKey: "value" },
+                                    stats.violationData.slice(0, 5).map((entry, index) => React.createElement(Cell, { key: `cell-${index}`, fill: SUSPENSION_COLORS[index % SUSPENSION_COLORS.length] }))
+                                ),
+                                React.createElement(RechartsTooltip, null),
+                                React.createElement(Legend, { layout: "vertical", verticalAlign: "middle", align: "right", wrapperStyle: { fontSize: '11px', maxWidth: '150px' } })
+                            )
+                        )
+                    )
+                ),
+                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-6" },
+                    React.createElement(Card, { title: "Data Overview", className: "md:col-span-2" },
+                        React.createElement("div", { className: "overflow-x-auto" },
+                            React.createElement("table", { className: "w-full text-sm text-left text-slate-600" },
+                                React.createElement("thead", { className: "text-xs text-slate-700 uppercase bg-slate-50" },
+                                    React.createElement("tr", null,
+                                        React.createElement("th", { className: "px-4 py-3" }, "Metric"),
+                                        React.createElement("th", { className: "px-4 py-3" }, "Count"),
+                                        React.createElement("th", { className: "px-4 py-3" }, "Percentage")
+                                    )
+                                ),
+                                React.createElement("tbody", null,
+                                    React.createElement("tr", { className: "border-b" },
+                                        React.createElement("td", { className: "px-4 py-3 font-medium" }, "Total Students"),
+                                        React.createElement("td", { className: "px-4 py-3" }, stats.totalStudents),
+                                        React.createElement("td", { className: "px-4 py-3" }, "100%")
+                                    ),
+                                    React.createElement("tr", { className: "border-b" },
+                                        React.createElement("td", { className: "px-4 py-3 font-medium" }, "English Learners"),
+                                        React.createElement("td", { className: "px-4 py-3" }, stats.elCount),
+                                        React.createElement("td", { className: "px-4 py-3" }, ((stats.elCount / stats.totalStudents) * 100).toFixed(1) + "%")
+                                    ),
+                                    React.createElement("tr", { className: "border-b" },
+                                        React.createElement("td", { className: "px-4 py-3 font-medium" }, "Special Education"),
+                                        React.createElement("td", { className: "px-4 py-3" }, stats.spedCount),
+                                        React.createElement("td", { className: "px-4 py-3" }, ((stats.spedCount / stats.totalStudents) * 100).toFixed(1) + "%")
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            );
+        };
+
+        // 3. Enrollment Dashboard (Existing)
+        const EnrollmentDashboard = ({ data }) => {
+            const stats = useMemo(() => {
+                const totalStudents = data.length;
+                const schools = {};
+                data.forEach(d => { schools[d['sch.name'] || 'Unknown'] = (schools[d['sch.name'] || 'Unknown'] || 0) + 1; });
+                const schoolData = Object.keys(schools).map(k => ({ name: k, count: schools[k] })).sort((a,b) => b.count - a.count);
+
+                const grades = {};
+                data.forEach(d => { grades[d['student.grade'] || 'N/A'] = (grades[d['student.grade'] || 'N/A'] || 0) + 1; });
+                const gradeOrder = ['TK', 'KN', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+                const gradeData = Object.keys(grades).map(k => ({ name: k, count: grades[k] })).sort((a, b) => {
+                    const idxA = gradeOrder.indexOf(a.name); const idxB = gradeOrder.indexOf(b.name);
+                    return (idxA !== -1 && idxB !== -1) ? idxA - idxB : a.name.localeCompare(b.name);
+                });
+
+                let elCount = 0; 
+                data.forEach(d => { if (d['lep.currentProgramStatusEL'] === 'EL' || d['lep.currentProgramStatusEL'] === 'Yes') elCount++; });
+                
+                let spedCount = 0; 
+                data.forEach(d => { if (['1', 'Yes', 'true'].includes(d['activeEnrollment.specialEdStatus'])) spedCount++; });
+
+                const gender = {}; 
+                data.forEach(d => { const g = d['student.gender'] || 'Unk'; gender[g] = (gender[g] || 0) + 1; });
+                const genderData = Object.keys(gender).map(k => ({ name: k, value: gender[k] }));
+
+                return { totalStudents, schoolData, gradeData, elCount, spedCount, genderData };
+            }, [data]);
+
+            return React.createElement("div", { className: "space-y-6 animate-fade-in pb-10" },
+                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" },
+                    React.createElement(StatCard, { title: "Total Enrollment", value: stats.totalStudents.toLocaleString(), icon: Users, color: "blue" }),
+                    React.createElement(StatCard, { title: "English Learners", value: stats.elCount.toLocaleString(), subtext: `${((stats.elCount / stats.totalStudents) * 100).toFixed(1)}%`, icon: BookOpen, color: "emerald" }),
+                    React.createElement(StatCard, { title: "Special Education", value: stats.spedCount.toLocaleString(), subtext: `${((stats.spedCount / stats.totalStudents) * 100).toFixed(1)}%`, icon: Activity, color: "orange" }),
+                    React.createElement(StatCard, { title: "Sites Reporting", value: stats.schoolData.length, icon: School, color: "purple" })
+                ),
+                React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-6" },
+                    React.createElement(Card, { title: "Enrollment by School Site", className: "min-h-[400px]" },
+                        React.createElement(ResponsiveContainer, { width: "100%", height: 300 },
+                            React.createElement(BarChart, { data: stats.schoolData, layout: "vertical", margin: { left: 40, right: 20 } },
+                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", horizontal: true, vertical: false }),
+                                React.createElement(XAxis, { type: "number" }),
+                                React.createElement(YAxis, { type: "category", dataKey: "name", width: 150, tick: { fontSize: 12 } }),
+                                React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' } }),
+                                React.createElement(Bar, { dataKey: "count", fill: "#3b82f6", radius: [0, 4, 4, 0] })
+                            )
+                        )
+                    ),
+                    React.createElement(Card, { title: "Grade Level Distribution", className: "min-h-[400px]" },
+                        React.createElement(ResponsiveContainer, { width: "100%", height: 300 },
+                            React.createElement(BarChart, { data: stats.gradeData },
+                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false }),
+                                React.createElement(XAxis, { dataKey: "name" }),
+                                React.createElement(YAxis, null),
+                                React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' } }),
+                                React.createElement(Bar, { dataKey: "count", fill: "#8b5cf6", radius: [4, 4, 0, 0] })
+                            )
+                        )
+                    )
+                ),
+                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-6" },
+                    React.createElement(Card, { title: "Gender Breakdown", className: "md:col-span-1" },
+                        React.createElement(ResponsiveContainer, { width: "100%", height: 250 },
+                            React.createElement(PieChart, null,
+                                React.createElement(Pie, { data: stats.genderData, cx: "50%", cy: "50%", innerRadius: 60, outerRadius: 80, paddingAngle: 5, dataKey: "value" },
+                                    stats.genderData.map((entry, index) => React.createElement(Cell, { key: `cell-${index}`, fill: COLORS[index % COLORS.length] }))
+                                ),
+                                React.createElement(RechartsTooltip, null),
+                                React.createElement(Legend, null)
+                            )
+                        )
+                    ),
+                    React.createElement(Card, { title: "Data Overview", className: "md:col-span-2" },
+                        React.createElement("div", { className: "overflow-x-auto" },
+                            React.createElement("table", { className: "w-full text-sm text-left text-slate-600" },
+                                React.createElement("thead", { className: "text-xs text-slate-700 uppercase bg-slate-50" },
+                                    React.createElement("tr", null,
+                                        React.createElement("th", { className: "px-4 py-3" }, "Metric"),
+                                        React.createElement("th", { className: "px-4 py-3" }, "Count"),
+                                        React.createElement("th", { className: "px-4 py-3" }, "Percentage")
+                                    )
+                                ),
+                                React.createElement("tbody", null,
+                                    React.createElement("tr", { className: "border-b" },
+                                        React.createElement("td", { className: "px-4 py-3 font-medium" }, "Total Students"),
+                                        React.createElement("td", { className: "px-4 py-3" }, stats.totalStudents),
+                                        React.createElement("td", { className: "px-4 py-3" }, "100%")
+                                    ),
+                                    React.createElement("tr", { className: "border-b" },
+                                        React.createElement("td", { className: "px-4 py-3 font-medium" }, "English Learners"),
+                                        React.createElement("td", { className: "px-4 py-3" }, stats.elCount),
+                                        React.createElement("td", { className: "px-4 py-3" }, ((stats.elCount / stats.totalStudents) * 100).toFixed(1) + "%")
+                                    ),
+                                    React.createElement("tr", { className: "border-b" },
+                                        React.createElement("td", { className: "px-4 py-3 font-medium" }, "Special Education"),
+                                        React.createElement("td", { className: "px-4 py-3" }, stats.spedCount),
+                                        React.createElement("td", { className: "px-4 py-3" }, ((stats.spedCount / stats.totalStudents) * 100).toFixed(1) + "%")
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            );
+        };
+
+        // 4. Generic View (Existing)
+        const GenericDashboard = ({ data, columns }) => (
+            React.createElement("div", { className: "space-y-6 pb-10" },
+                React.createElement(Card, { title: "Raw Data View", className: "h-full" },
+                    React.createElement("div", { className: "overflow-auto custom-scrollbar flex-1 max-h-[600px]" },
+                        React.createElement("table", { className: "w-full text-sm text-left text-slate-600" },
+                            React.createElement("thead", { className: "text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 shadow-sm" },
+                                React.createElement("tr", null,
+                                    columns.map((col, idx) => React.createElement("th", { key: idx, className: "px-6 py-3 border-b bg-slate-50" }, col))
+                                )
+                            ),
+                            React.createElement("tbody", null,
+                                data.slice(0, 100).map((row, rIdx) => 
+                                    React.createElement("tr", { key: rIdx, className: "bg-white border-b hover:bg-slate-50" },
+                                        columns.map((col, cIdx) => React.createElement("td", { key: cIdx, className: "px-6 py-4 truncate max-w-xs" }, row[col]))
+                                    )
+                                )
+                            )
+                        ),
+                        data.length > 100 && React.createElement("div", { className: "p-4 text-center text-slate-500 bg-slate-50 border-t" }, `Showing first 100 rows of ${data.length} records`)
+                    )
+                )
+            )
+        );
+
+        // --- Main Application ---
+        function App() {
+            const [datasets, setDatasets] = useState([]);
+            const [activeTab, setActiveTab] = useState('home');
+            const [dragActive, setDragActive] = useState(false);
+
+            const handleDrag = (e) => {
+                e.preventDefault(); e.stopPropagation();
+                if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
+                else if (e.type === "dragleave") setDragActive(false);
+            };
+
+            const processFile = (file) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const text = e.target.result;
+                    const { headers, data } = parseCSV(text);
+                    const type = detectDatasetType(headers);
+                    const newDataset = {
+                        id: Date.now().toString(),
+                        name: file.name.replace('.csv', ''),
+                        fileName: file.name,
+                        uploadedAt: new Date(),
+                        headers, data, type
+                    };
+                    setDatasets(prev => [...prev, newDataset]);
+                    setActiveTab(newDataset.id);
+                };
+                reader.readAsText(file);
+            };
+
+            const detectDatasetType = (headers) => {
+                if (headers.includes('attChronicAbsenteeism.absenteeismPercentage') || headers.includes('attChronicAbsenteeism.chronicallyAbsent')) return 'absenteeism';
+                if (headers.includes('behaviorDetail.eventName') || headers.includes('behaviorDetail.resolutionName')) return 'suspension';
+                if (headers.includes('sch.name') && headers.includes('student.grade')) return 'enrollment';
+                return 'generic';
+            };
+
+            const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); setDragActive(false); if (e.dataTransfer.files?.[0]) processFile(e.dataTransfer.files[0]); };
+            const handleFileInput = (e) => { if (e.target.files?.[0]) processFile(e.target.files[0]); };
+            const deleteDataset = (e, id) => { e.stopPropagation(); const newDatasets = datasets.filter(d => d.id !== id); setDatasets(newDatasets); if (activeTab === id) setActiveTab('home'); };
+            const updateDatasetType = (id, newType) => { setDatasets(prev => prev.map(d => d.id === id ? { ...d, type: newType } : d)); };
+
+            // Render Logic
+            const renderActiveView = () => {
+                if (activeTab === 'home') {
+                    return React.createElement("div", { className: "max-w-4xl mx-auto pt-10 text-center px-4" },
+                        React.createElement("div", { className: "mb-8 animate-fade-in" },
+                            React.createElement("h1", { className: "text-4xl font-bold text-slate-800 mb-2" }, "Vibe Data Dashboard"),
+                            React.createElement("p", { className: "text-slate-500 text-lg" }, "Upload your CSV files to visualize and explore your data locally.")
+                        ),
+                        React.createElement("div", {
+                            className: `border-2 border-dashed rounded-2xl p-12 transition-all cursor-pointer flex flex-col items-center justify-center animate-fade-in ${dragActive ? 'border-blue-500 bg-blue-50 scale-[1.02]' : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'}`,
+                            onDragEnter: handleDrag, onDragLeave: handleDrag, onDragOver: handleDrag, onDrop: handleDrop,
+                            onClick: () => document.getElementById('file-upload').click()
+                        },
+                            React.createElement("input", { id: "file-upload", type: "file", className: "hidden", accept: ".csv", onChange: handleFileInput }),
+                            React.createElement("div", { className: "bg-blue-100 p-4 rounded-full text-blue-600 mb-4" }, React.createElement(Upload, { size: 32 })),
+                            React.createElement("h3", { className: "text-xl font-semibold text-slate-800 mb-2" }, "Upload a CSV File"),
+                            React.createElement("p", { className: "text-slate-500" }, "Drag and drop or click to browse")
+                        ),
+                        React.createElement("div", { className: "mt-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left" },
+                            datasets.map(ds => 
+                                React.createElement("div", { key: ds.id, onClick: () => setActiveTab(ds.id), className: "group bg-white p-6 rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md transition-all hover:border-blue-300 animate-fade-in" },
+                                    React.createElement("div", { className: "flex justify-between items-start mb-4" },
+                                        React.createElement("div", { className: `p-2 rounded-lg ${ds.type === 'enrollment' ? 'bg-indigo-100 text-indigo-600' : ds.type === 'suspension' ? 'bg-orange-100 text-orange-600' : ds.type === 'absenteeism' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}` },
+                                            ds.type === 'enrollment' ? React.createElement(GraduationCap, { size: 20 }) :
+                                            ds.type === 'suspension' ? React.createElement(AlertTriangle, { size: 20 }) :
+                                            ds.type === 'absenteeism' ? React.createElement(Clock, { size: 20 }) :
+                                            React.createElement(FileText, { size: 20 })
+                                        ),
+                                        React.createElement("button", { onClick: (e) => deleteDataset(e, ds.id), className: "text-slate-400 hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors" }, React.createElement(Trash2, { size: 16 }))
+                                    ),
+                                    React.createElement("h3", { className: "font-semibold text-slate-800 group-hover:text-blue-600 transition-colors" }, ds.name),
+                                    React.createElement("p", { className: "text-sm text-slate-500 mt-1" }, `${ds.data.length.toLocaleString()} records`),
+                                    React.createElement("div", { className: "mt-4 flex items-center text-xs font-medium text-slate-400" },
+                                        React.createElement("span", { className: "truncate max-w-[150px]" }, ds.fileName)
+                                    )
+                                )
+                            )
+                        )
+                    );
+                }
+
+                const activeDataset = datasets.find(d => d.id === activeTab);
+                if (!activeDataset) return null;
+
+                return React.createElement("div", { className: "space-y-6" },
+                    React.createElement("header", { className: "flex flex-col md:flex-row justify-between items-start md:items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-4" },
+                        React.createElement("div", null,
+                            React.createElement("h1", { className: "text-2xl font-bold text-slate-800" }, activeDataset.name),
+                            React.createElement("p", { className: "text-slate-500 text-sm" }, `${activeDataset.data.length.toLocaleString()} Records • Uploaded ${activeDataset.uploadedAt.toLocaleTimeString()}`)
+                        ),
+                        React.createElement("div", { className: "flex items-center space-x-3" },
+                            React.createElement("div", { className: "relative group" },
+                                React.createElement("button", { className: "flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors" },
+                                    React.createElement("span", null, "View: ", React.createElement("span", { className: "font-bold capitalize" }, activeDataset.type)),
+                                    React.createElement(ChevronDown, { size: 14 })
+                                ),
+                                React.createElement("div", { className: "absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden hidden group-hover:block z-10" },
+                                    React.createElement("button", { onClick: () => updateDatasetType(activeDataset.id, 'enrollment'), className: "w-full text-left px-4 py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(GraduationCap, { size: 14, className: "text-indigo-500" }), React.createElement("span", null, "Enrollment")),
+                                    React.createElement("button", { onClick: () => updateDatasetType(activeDataset.id, 'suspension'), className: "w-full text-left px-4 py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(AlertTriangle, { size: 14, className: "text-orange-500" }), React.createElement("span", null, "Suspension")),
+                                    React.createElement("button", { onClick: () => updateDatasetType(activeDataset.id, 'absenteeism'), className: "w-full text-left px-4 py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(Clock, { size: 14, className: "text-red-500" }), React.createElement("span", null, "Absenteeism")),
+                                    React.createElement("button", { onClick: () => updateDatasetType(activeDataset.id, 'generic'), className: "w-full text-left px-4 py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(FileText, { size: 14, className: "text-slate-500" }), React.createElement("span", null, "Raw Data"))
+                                )
+                            )
+                        )
+                    ),
+                    activeDataset.type === 'enrollment' ? React.createElement(EnrollmentDashboard, { data: activeDataset.data }) :
+                    activeDataset.type === 'suspension' ? React.createElement(SuspensionDashboard, { data: activeDataset.data }) :
+                    activeDataset.type === 'absenteeism' ? React.createElement(AbsenteeismDashboard, { data: activeDataset.data }) :
+                    React.createElement(GenericDashboard, { data: activeDataset.data, columns: activeDataset.headers })
+                );
+            };
+
+            return React.createElement("div", { className: "flex h-screen bg-slate-50 font-sans text-slate-900" },
+                React.createElement("aside", { className: "w-64 bg-slate-900 text-white flex flex-col shadow-xl flex-shrink-0" },
+                    React.createElement("div", { className: "p-6 border-b border-slate-700" },
+                        React.createElement("div", { className: "flex items-center space-x-3" },
+                            React.createElement("div", { className: "bg-blue-600 p-2 rounded-lg" }, React.createElement(Database, { size: 20, className: "text-white" })),
+                            React.createElement("span", { className: "font-bold text-lg tracking-tight" }, "VibeDash")
+                        )
+                    ),
+                    React.createElement("nav", { className: "flex-1 overflow-y-auto p-4 space-y-2" },
+                        React.createElement("button", { onClick: () => setActiveTab('home'), className: `w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'home' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}` },
+                            React.createElement(LayoutDashboard, { size: 18 }),
+                            React.createElement("span", { className: "font-medium" }, "Dashboard Home")
+                        ),
+                        React.createElement("div", { className: "mt-8 mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider" }, "Datasets"),
+                        datasets.length === 0 ? React.createElement("div", { className: "px-4 py-2 text-sm text-slate-600 italic" }, "No data uploaded yet") :
+                        datasets.map(ds => 
+                            React.createElement("div", { key: ds.id, onClick: () => setActiveTab(ds.id), className: `group w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all cursor-pointer ${activeTab === ds.id ? 'bg-slate-800 text-white border-l-4 border-blue-500' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}` },
+                                React.createElement("div", { className: "flex items-center space-x-3 truncate overflow-hidden" },
+                                    ds.type === 'enrollment' ? React.createElement(School, { size: 16, className: "flex-shrink-0 text-indigo-400" }) :
+                                    ds.type === 'suspension' ? React.createElement(AlertTriangle, { size: 16, className: "flex-shrink-0 text-orange-400" }) :
+                                    ds.type === 'absenteeism' ? React.createElement(Clock, { size: 16, className: "flex-shrink-0 text-red-400" }) :
+                                    React.createElement(FileText, { size: 16, className: "flex-shrink-0 text-slate-400" }),
+                                    React.createElement("span", { className: "truncate text-sm", title: ds.name }, ds.name)
+                                ),
+                                React.createElement("button", { onClick: (e) => deleteDataset(e, ds.id), className: `p-1.5 rounded-md hover:bg-red-900/50 hover:text-red-400 transition-all flex-shrink-0 ${activeTab === ds.id ? 'opacity-100 text-slate-400' : 'opacity-0 group-hover:opacity-100 text-slate-500'}` }, React.createElement(Trash2, { size: 14 }))
+                            )
+                        )
+                    ),
+                    React.createElement("div", { className: "p-4 border-t border-slate-700" },
+                        React.createElement("button", { onClick: () => document.getElementById('sidebar-upload').click(), className: "w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg transition-colors border border-slate-600 border-dashed" },
+                            React.createElement(Upload, { size: 16 }),
+                            React.createElement("span", { className: "text-sm font-medium" }, "Add Dataset")
+                        ),
+                        React.createElement("input", { id: "sidebar-upload", type: "file", className: "hidden", accept: ".csv", onChange: handleFileInput })
+                    )
+                ),
+                React.createElement("main", { className: "flex-1 overflow-auto p-8" }, renderActiveView())
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(React.createElement(App));
+    </script>
+</body>
+</html>
