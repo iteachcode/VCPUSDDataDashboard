@@ -59,7 +59,7 @@
         import { 
             Upload, FileText, Trash2, Database, LayoutDashboard, ChevronRight, 
             School, Users, GraduationCap, BookOpen, Activity, AlertTriangle, 
-            ChevronDown, UserX, Clock, Calendar, RefreshCw
+            ChevronDown, UserX, Clock, Calendar, Menu, X
         } from 'lucide-react';
 
         // --- Color Palettes ---
@@ -102,28 +102,28 @@
 
         // --- UI Components ---
         const Card = ({ title, children, className = "" }) => (
-            React.createElement("div", { className: `bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col ${className}` },
+            React.createElement("div", { className: `bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 flex flex-col ${className}` },
                 title && React.createElement("h3", { className: "text-lg font-semibold text-slate-800 mb-4" }, title),
                 children
             )
         );
 
         const StatCard = ({ title, value, icon: Icon, color = "blue", subtext }) => (
-            React.createElement("div", { className: "bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-start space-x-4 transition hover:shadow-md" },
-                React.createElement("div", { className: `p-3 rounded-lg bg-${color}-50 text-${color}-600` },
+            React.createElement("div", { className: "bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-slate-200 flex items-start space-x-4 transition hover:shadow-md" },
+                React.createElement("div", { className: `p-3 rounded-lg bg-${color}-50 text-${color}-600 shrink-0` },
                     React.createElement(Icon, { size: 24 })
                 ),
-                React.createElement("div", null,
-                    React.createElement("p", { className: "text-slate-500 text-sm font-medium" }, title),
+                React.createElement("div", { className: "overflow-hidden" },
+                    React.createElement("p", { className: "text-slate-500 text-sm font-medium truncate" }, title),
                     React.createElement("h3", { className: "text-2xl font-bold text-slate-800 mt-1" }, value),
-                    subtext && React.createElement("p", { className: "text-xs text-slate-400 mt-1" }, subtext)
+                    subtext && React.createElement("p", { className: "text-xs text-slate-400 mt-1 truncate" }, subtext)
                 )
             )
         );
 
         // --- Specific Dashboard Views ---
 
-        // 1. Absenteeism Dashboard (Updated with Tooltip Percentage)
+        // 1. Absenteeism Dashboard
         const AbsenteeismDashboard = ({ data }) => {
             const stats = useMemo(() => {
                 const totalStudents = data.length;
@@ -138,29 +138,24 @@
                 const ranges = { '0 Days': 0, '1-5 Days': 0, '6-10 Days': 0, '10+ Days': 0 };
 
                 data.forEach(d => {
-                    // Check Chronic Status
                     const isChronic = d['attChronicAbsenteeism.chronicallyAbsent'] === '1' || d['attChronicAbsenteeism.chronicallyAbsent'] === 'Yes';
                     if (isChronic) chronicCount++;
 
-                    // School Grouping
                     const schoolName = d['sch.name'] || 'Unknown';
                     if (!schools[schoolName]) schools[schoolName] = { name: schoolName, total: 0, chronic: 0 };
                     schools[schoolName].total++;
                     if (isChronic) schools[schoolName].chronic++;
 
-                    // Grade Grouping
                     const grade = d['student.grade'] || 'N/A';
                     if (!grades[grade]) grades[grade] = { name: grade, total: 0, chronic: 0 };
                     grades[grade].total++;
                     if (isChronic) grades[grade].chronic++;
 
-                    // Special Ed Grouping
                     const isSped = ['1', 'Yes', 'true'].includes(d['activeEnrollment.specialEdStatus']);
                     const groupKey = isSped ? 'Special Ed' : 'General Ed';
                     subGroups[groupKey].total++;
                     if (isChronic) subGroups[groupKey].chronic++;
 
-                    // Days Absent Logic
                     const pct = parseFloat(d['attChronicAbsenteeism.absenteeismPercentage']) || 0;
                     const scheduled = parseFloat(d['attChronicAbsenteeism.scheduledDays']) || 0;
                     const daysAbsent = (pct / 100) * scheduled;
@@ -171,8 +166,6 @@
                     else ranges['10+ Days']++;
                 });
 
-                // Format School Data
-                // Added rate calculation here so it is available in the chart payload
                 const schoolData = Object.values(schools)
                     .map(s => ({
                         ...s,
@@ -180,20 +173,17 @@
                     }))
                     .sort((a, b) => b.total - a.total);
                 
-                // Format Grade Data (Logical Sort)
                 const gradeOrder = ['TK', 'KN', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
                 const gradeData = Object.values(grades).map(g => ({ ...g, rate: (g.chronic / g.total) * 100 })).sort((a, b) => {
                     const idxA = gradeOrder.indexOf(a.name); const idxB = gradeOrder.indexOf(b.name);
                     return (idxA !== -1 && idxB !== -1) ? idxA - idxB : a.name.localeCompare(b.name);
                 });
 
-                // Format SubGroup Data
                 const subGroupData = Object.keys(subGroups).map(k => ({
                     name: k,
                     rate: parseFloat(((subGroups[k].chronic / subGroups[k].total) * 100).toFixed(1))
                 }));
 
-                // Updated Range Data to include percentage
                 const rangeData = Object.keys(ranges).map(k => ({ 
                     name: k, 
                     value: ranges[k],
@@ -204,59 +194,60 @@
             }, [data]);
 
             return React.createElement("div", { className: "space-y-6 animate-fade-in pb-10" },
-                // Stats Row
                 React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-4" },
                     React.createElement(StatCard, { title: "Total Students", value: stats.totalStudents.toLocaleString(), icon: Users, color: "blue" }),
                     React.createElement(StatCard, { title: "Chronically Absent", value: stats.chronicCount.toLocaleString(), subtext: `${((stats.chronicCount / stats.totalStudents) * 100).toFixed(1)}% Rate`, icon: Clock, color: "red" }),
-                    React.createElement(StatCard, { title: "Severe Absence (10+ Days)", value: stats.rangeData.find(r => r.name === '10+ Days')?.value.toLocaleString() || 0, icon: Calendar, color: "orange" })
+                    React.createElement(StatCard, { title: "Severe Absence (10+)", value: stats.rangeData.find(r => r.name === '10+ Days')?.value.toLocaleString() || 0, icon: Calendar, color: "orange" })
                 ),
-
-                // Main Charts Row (School & Grade)
                 React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-6" },
                     React.createElement(Card, { title: "Chronic Absenteeism by School" },
-                        React.createElement(ResponsiveContainer, { width: "100%", height: 350 },
-                            React.createElement(BarChart, { data: stats.schoolData, layout: "vertical", margin: { left: 40, right: 20 } },
-                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", horizontal: true, vertical: false }),
-                                React.createElement(XAxis, { type: "number" }),
-                                React.createElement(YAxis, { type: "category", dataKey: "name", width: 140, tick: { fontSize: 11 } }),
-                                // Tooltip updated to show percentage for Chronically Absent bars
-                                React.createElement(RechartsTooltip, { 
-                                    cursor: { fill: 'transparent' },
-                                    formatter: (value, name, item) => {
-                                        if (name === "Chronically Absent") {
-                                            return [`${value.toLocaleString()} (${item.payload.rate}%)`, name];
-                                        }
-                                        return [value.toLocaleString(), name];
-                                    }
-                                }),
-                                React.createElement(Legend, null),
-                                React.createElement(Bar, { dataKey: "total", name: "Total Students", fill: "#94a3b8", radius: [0, 4, 4, 0], barSize: 20 }),
-                                React.createElement(Bar, { dataKey: "chronic", name: "Chronically Absent", fill: "#ef4444", radius: [0, 4, 4, 0], barSize: 20 })
+                        React.createElement("div", { className: "w-full overflow-x-auto" }, 
+                            React.createElement("div", { className: "min-w-[400px]" }, 
+                                React.createElement(ResponsiveContainer, { width: "100%", height: 350 },
+                                    React.createElement(BarChart, { data: stats.schoolData, layout: "vertical", margin: { left: 40, right: 20 } },
+                                        React.createElement(CartesianGrid, { strokeDasharray: "3 3", horizontal: true, vertical: false }),
+                                        React.createElement(XAxis, { type: "number" }),
+                                        React.createElement(YAxis, { type: "category", dataKey: "name", width: 140, tick: { fontSize: 11 } }),
+                                        React.createElement(RechartsTooltip, { 
+                                            cursor: { fill: 'transparent' },
+                                            formatter: (value, name, item) => {
+                                                if (name === "Chronically Absent") {
+                                                    return [`${value.toLocaleString()} (${item.payload.rate}%)`, name];
+                                                }
+                                                return [value.toLocaleString(), name];
+                                            }
+                                        }),
+                                        React.createElement(Legend, null),
+                                        React.createElement(Bar, { dataKey: "total", name: "Total Students", fill: "#94a3b8", radius: [0, 4, 4, 0], barSize: 20 }),
+                                        React.createElement(Bar, { dataKey: "chronic", name: "Chronically Absent", fill: "#ef4444", radius: [0, 4, 4, 0], barSize: 20 })
+                                    )
+                                )
                             )
                         )
                     ),
                     React.createElement(Card, { title: "Chronic Rate by Grade Level (%)" },
-                        React.createElement(ResponsiveContainer, { width: "100%", height: 350 },
-                            React.createElement(BarChart, { data: stats.gradeData },
-                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false }),
-                                React.createElement(XAxis, { dataKey: "name" }),
-                                React.createElement(YAxis, { unit: "%" }),
-                                React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' }, formatter: (value) => `${value.toFixed(1)}%` }),
-                                React.createElement(Bar, { dataKey: "rate", name: "Chronic Rate", fill: "#8b5cf6", radius: [4, 4, 0, 0] })
+                        React.createElement("div", { className: "w-full overflow-x-auto" }, 
+                            React.createElement("div", { className: "min-w-[350px]" }, 
+                                React.createElement(ResponsiveContainer, { width: "100%", height: 350 },
+                                    React.createElement(BarChart, { data: stats.gradeData },
+                                        React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false }),
+                                        React.createElement(XAxis, { dataKey: "name" }),
+                                        React.createElement(YAxis, { unit: "%" }),
+                                        React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' }, formatter: (value) => `${value.toFixed(1)}%` }),
+                                        React.createElement(Bar, { dataKey: "rate", name: "Chronic Rate", fill: "#8b5cf6", radius: [4, 4, 0, 0] })
+                                    )
+                                )
                             )
                         )
                     )
                 ),
-
-                // Secondary Charts Row (Days Absent & Subgroups)
                 React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-3 gap-6" },
                     React.createElement(Card, { title: "Days Absent Groups", className: "lg:col-span-2" },
                         React.createElement(ResponsiveContainer, { width: "100%", height: 300 },
                             React.createElement(BarChart, { data: stats.rangeData },
                                 React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false }),
-                                React.createElement(XAxis, { dataKey: "name" }),
+                                React.createElement(XAxis, { dataKey: "name", tick: {fontSize: 12} }),
                                 React.createElement(YAxis, null),
-                                // Tooltip showing Percentage
                                 React.createElement(RechartsTooltip, { 
                                     cursor: { fill: 'transparent' },
                                     formatter: (value, name, item) => [`${value.toLocaleString()} (${item.payload.percentage}%)`, name]
@@ -271,7 +262,7 @@
                         React.createElement(ResponsiveContainer, { width: "100%", height: 300 },
                             React.createElement(BarChart, { data: stats.subGroupData },
                                 React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false }),
-                                React.createElement(XAxis, { dataKey: "name" }),
+                                React.createElement(XAxis, { dataKey: "name", tick: {fontSize: 12} }),
                                 React.createElement(YAxis, { unit: "%" }),
                                 React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' }, formatter: (value) => `${value}%` }),
                                 React.createElement(Bar, { dataKey: "rate", name: "Chronic Rate %", fill: "#f59e0b", radius: [4, 4, 0, 0], barSize: 40 })
@@ -279,11 +270,9 @@
                         )
                     )
                 ),
-
-                // Detailed Table
                 React.createElement(Card, { title: "Chronic Rates by Site" },
                     React.createElement("div", { className: "overflow-x-auto custom-scrollbar" },
-                        React.createElement("table", { className: "w-full text-sm text-left text-slate-600" },
+                        React.createElement("table", { className: "w-full text-sm text-left text-slate-600 whitespace-nowrap" },
                             React.createElement("thead", { className: "text-xs text-slate-700 uppercase bg-slate-50" },
                                 React.createElement("tr", null,
                                     React.createElement("th", { className: "px-4 py-3" }, "School Name"),
@@ -313,7 +302,7 @@
             );
         };
 
-        // 2. Suspension Dashboard (Existing)
+        // 2. Suspension Dashboard
         const SuspensionDashboard = ({ data }) => {
             const stats = useMemo(() => {
                 const totalIncidents = data.length;
@@ -351,15 +340,19 @@
                 ),
                 React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-6" },
                     React.createElement(Card, { title: "Suspensions by School Site" },
-                        React.createElement(ResponsiveContainer, { width: "100%", height: 350 },
-                            React.createElement(BarChart, { data: stats.schoolData, layout: "vertical", margin: { left: 40, right: 20 } },
-                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", horizontal: true, vertical: false }),
-                                React.createElement(XAxis, { type: "number" }),
-                                React.createElement(YAxis, { type: "category", dataKey: "name", width: 140, tick: { fontSize: 11 } }),
-                                React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' } }),
-                                React.createElement(Legend, null),
-                                React.createElement(Bar, { dataKey: "total", name: "Total Incidents", fill: "#ef4444", radius: [0, 4, 4, 0], barSize: 20 }),
-                                React.createElement(Bar, { dataKey: "unique", name: "Unique Students", fill: "#f97316", radius: [0, 4, 4, 0], barSize: 20 })
+                        React.createElement("div", { className: "w-full overflow-x-auto" }, 
+                            React.createElement("div", { className: "min-w-[400px]" },
+                                React.createElement(ResponsiveContainer, { width: "100%", height: 350 },
+                                    React.createElement(BarChart, { data: stats.schoolData, layout: "vertical", margin: { left: 40, right: 20 } },
+                                        React.createElement(CartesianGrid, { strokeDasharray: "3 3", horizontal: true, vertical: false }),
+                                        React.createElement(XAxis, { type: "number" }),
+                                        React.createElement(YAxis, { type: "category", dataKey: "name", width: 140, tick: { fontSize: 11 } }),
+                                        React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' } }),
+                                        React.createElement(Legend, null),
+                                        React.createElement(Bar, { dataKey: "total", name: "Total Incidents", fill: "#ef4444", radius: [0, 4, 4, 0], barSize: 20 }),
+                                        React.createElement(Bar, { dataKey: "unique", name: "Unique Students", fill: "#f97316", radius: [0, 4, 4, 0], barSize: 20 })
+                                    )
+                                )
                             )
                         )
                     ),
@@ -377,8 +370,8 @@
                 ),
                 React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-6" },
                     React.createElement(Card, { title: "Data Overview", className: "md:col-span-2" },
-                        React.createElement("div", { className: "overflow-x-auto" },
-                            React.createElement("table", { className: "w-full text-sm text-left text-slate-600" },
+                        React.createElement("div", { className: "overflow-x-auto custom-scrollbar" },
+                            React.createElement("table", { className: "w-full text-sm text-left text-slate-600 whitespace-nowrap" },
                                 React.createElement("thead", { className: "text-xs text-slate-700 uppercase bg-slate-50" },
                                     React.createElement("tr", null,
                                         React.createElement("th", { className: "px-4 py-3" }, "Metric"),
@@ -410,7 +403,7 @@
             );
         };
 
-        // 3. Enrollment Dashboard (Existing)
+        // 3. Enrollment Dashboard
         const EnrollmentDashboard = ({ data }) => {
             const stats = useMemo(() => {
                 const totalStudents = data.length;
@@ -440,7 +433,7 @@
             }, [data]);
 
             return React.createElement("div", { className: "space-y-6 animate-fade-in pb-10" },
-                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" },
+                React.createElement("div", { className: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" },
                     React.createElement(StatCard, { title: "Total Enrollment", value: stats.totalStudents.toLocaleString(), icon: Users, color: "blue" }),
                     React.createElement(StatCard, { title: "English Learners", value: stats.elCount.toLocaleString(), subtext: `${((stats.elCount / stats.totalStudents) * 100).toFixed(1)}%`, icon: BookOpen, color: "emerald" }),
                     React.createElement(StatCard, { title: "Special Education", value: stats.spedCount.toLocaleString(), subtext: `${((stats.spedCount / stats.totalStudents) * 100).toFixed(1)}%`, icon: Activity, color: "orange" }),
@@ -448,24 +441,32 @@
                 ),
                 React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-6" },
                     React.createElement(Card, { title: "Enrollment by School Site", className: "min-h-[400px]" },
-                        React.createElement(ResponsiveContainer, { width: "100%", height: 300 },
-                            React.createElement(BarChart, { data: stats.schoolData, layout: "vertical", margin: { left: 40, right: 20 } },
-                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", horizontal: true, vertical: false }),
-                                React.createElement(XAxis, { type: "number" }),
-                                React.createElement(YAxis, { type: "category", dataKey: "name", width: 150, tick: { fontSize: 12 } }),
-                                React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' } }),
-                                React.createElement(Bar, { dataKey: "count", fill: "#3b82f6", radius: [0, 4, 4, 0] })
+                        React.createElement("div", { className: "w-full overflow-x-auto" }, 
+                            React.createElement("div", { className: "min-w-[400px]" },
+                                React.createElement(ResponsiveContainer, { width: "100%", height: 300 },
+                                    React.createElement(BarChart, { data: stats.schoolData, layout: "vertical", margin: { left: 40, right: 20 } },
+                                        React.createElement(CartesianGrid, { strokeDasharray: "3 3", horizontal: true, vertical: false }),
+                                        React.createElement(XAxis, { type: "number" }),
+                                        React.createElement(YAxis, { type: "category", dataKey: "name", width: 150, tick: { fontSize: 12 } }),
+                                        React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' } }),
+                                        React.createElement(Bar, { dataKey: "count", fill: "#3b82f6", radius: [0, 4, 4, 0] })
+                                    )
+                                )
                             )
                         )
                     ),
                     React.createElement(Card, { title: "Grade Level Distribution", className: "min-h-[400px]" },
-                        React.createElement(ResponsiveContainer, { width: "100%", height: 300 },
-                            React.createElement(BarChart, { data: stats.gradeData },
-                                React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false }),
-                                React.createElement(XAxis, { dataKey: "name" }),
-                                React.createElement(YAxis, null),
-                                React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' } }),
-                                React.createElement(Bar, { dataKey: "count", fill: "#8b5cf6", radius: [4, 4, 0, 0] })
+                        React.createElement("div", { className: "w-full overflow-x-auto" }, 
+                            React.createElement("div", { className: "min-w-[350px]" },
+                                React.createElement(ResponsiveContainer, { width: "100%", height: 300 },
+                                    React.createElement(BarChart, { data: stats.gradeData },
+                                        React.createElement(CartesianGrid, { strokeDasharray: "3 3", vertical: false }),
+                                        React.createElement(XAxis, { dataKey: "name" }),
+                                        React.createElement(YAxis, null),
+                                        React.createElement(RechartsTooltip, { cursor: { fill: 'transparent' } }),
+                                        React.createElement(Bar, { dataKey: "count", fill: "#8b5cf6", radius: [4, 4, 0, 0] })
+                                    )
+                                )
                             )
                         )
                     )
@@ -483,8 +484,8 @@
                         )
                     ),
                     React.createElement(Card, { title: "Data Overview", className: "md:col-span-2" },
-                        React.createElement("div", { className: "overflow-x-auto" },
-                            React.createElement("table", { className: "w-full text-sm text-left text-slate-600" },
+                        React.createElement("div", { className: "overflow-x-auto custom-scrollbar" },
+                            React.createElement("table", { className: "w-full text-sm text-left text-slate-600 whitespace-nowrap" },
                                 React.createElement("thead", { className: "text-xs text-slate-700 uppercase bg-slate-50" },
                                     React.createElement("tr", null,
                                         React.createElement("th", { className: "px-4 py-3" }, "Metric"),
@@ -516,12 +517,12 @@
             );
         };
 
-        // 4. Generic View (Existing)
+        // 4. Generic View
         const GenericDashboard = ({ data, columns }) => (
             React.createElement("div", { className: "space-y-6 pb-10" },
                 React.createElement(Card, { title: "Raw Data View", className: "h-full" },
                     React.createElement("div", { className: "overflow-auto custom-scrollbar flex-1 max-h-[600px]" },
-                        React.createElement("table", { className: "w-full text-sm text-left text-slate-600" },
+                        React.createElement("table", { className: "w-full text-sm text-left text-slate-600 whitespace-nowrap" },
                             React.createElement("thead", { className: "text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 shadow-sm" },
                                 React.createElement("tr", null,
                                     columns.map((col, idx) => React.createElement("th", { key: idx, className: "px-6 py-3 border-b bg-slate-50" }, col))
@@ -546,6 +547,7 @@
             const [datasets, setDatasets] = useState([]);
             const [activeTab, setActiveTab] = useState('home');
             const [dragActive, setDragActive] = useState(false);
+            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile Menu State
 
             const handleDrag = (e) => {
                 e.preventDefault(); e.stopPropagation();
@@ -568,6 +570,7 @@
                     };
                     setDatasets(prev => [...prev, newDataset]);
                     setActiveTab(newDataset.id);
+                    setIsMobileMenuOpen(false); // Close menu on successful upload
                 };
                 reader.readAsText(file);
             };
@@ -587,24 +590,24 @@
             // Render Logic
             const renderActiveView = () => {
                 if (activeTab === 'home') {
-                    return React.createElement("div", { className: "max-w-4xl mx-auto pt-10 text-center px-4" },
+                    return React.createElement("div", { className: "max-w-4xl mx-auto pt-6 sm:pt-10 text-center" },
                         React.createElement("div", { className: "mb-8 animate-fade-in" },
-                            React.createElement("h1", { className: "text-4xl font-bold text-slate-800 mb-2" }, "Vibe Data Dashboard"),
-                            React.createElement("p", { className: "text-slate-500 text-lg" }, "Upload your CSV files to visualize and explore your data locally.")
+                            React.createElement("h1", { className: "text-3xl sm:text-4xl font-bold text-slate-800 mb-2" }, "Vibe Data Dashboard"),
+                            React.createElement("p", { className: "text-slate-500 text-base sm:text-lg" }, "Upload your CSV files to visualize and explore your data locally.")
                         ),
                         React.createElement("div", {
-                            className: `border-2 border-dashed rounded-2xl p-12 transition-all cursor-pointer flex flex-col items-center justify-center animate-fade-in ${dragActive ? 'border-blue-500 bg-blue-50 scale-[1.02]' : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'}`,
+                            className: `border-2 border-dashed rounded-2xl p-8 sm:p-12 transition-all cursor-pointer flex flex-col items-center justify-center animate-fade-in ${dragActive ? 'border-blue-500 bg-blue-50 scale-[1.02]' : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'}`,
                             onDragEnter: handleDrag, onDragLeave: handleDrag, onDragOver: handleDrag, onDrop: handleDrop,
                             onClick: () => document.getElementById('file-upload').click()
                         },
                             React.createElement("input", { id: "file-upload", type: "file", className: "hidden", accept: ".csv", onChange: handleFileInput }),
                             React.createElement("div", { className: "bg-blue-100 p-4 rounded-full text-blue-600 mb-4" }, React.createElement(Upload, { size: 32 })),
-                            React.createElement("h3", { className: "text-xl font-semibold text-slate-800 mb-2" }, "Upload a CSV File"),
-                            React.createElement("p", { className: "text-slate-500" }, "Drag and drop or click to browse")
+                            React.createElement("h3", { className: "text-lg sm:text-xl font-semibold text-slate-800 mb-2" }, "Upload a CSV File"),
+                            React.createElement("p", { className: "text-slate-500 text-sm sm:text-base" }, "Drag and drop or click to browse")
                         ),
-                        React.createElement("div", { className: "mt-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left" },
+                        React.createElement("div", { className: "mt-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 text-left" },
                             datasets.map(ds => 
-                                React.createElement("div", { key: ds.id, onClick: () => setActiveTab(ds.id), className: "group bg-white p-6 rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md transition-all hover:border-blue-300 animate-fade-in" },
+                                React.createElement("div", { key: ds.id, onClick: () => { setActiveTab(ds.id); setIsMobileMenuOpen(false); }, className: "group bg-white p-5 sm:p-6 rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md transition-all hover:border-blue-300 animate-fade-in" },
                                     React.createElement("div", { className: "flex justify-between items-start mb-4" },
                                         React.createElement("div", { className: `p-2 rounded-lg ${ds.type === 'enrollment' ? 'bg-indigo-100 text-indigo-600' : ds.type === 'suspension' ? 'bg-orange-100 text-orange-600' : ds.type === 'absenteeism' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}` },
                                             ds.type === 'enrollment' ? React.createElement(GraduationCap, { size: 20 }) :
@@ -629,22 +632,23 @@
                 if (!activeDataset) return null;
 
                 return React.createElement("div", { className: "space-y-6" },
-                    React.createElement("header", { className: "flex flex-col md:flex-row justify-between items-start md:items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-4" },
+                    React.createElement("header", { className: "flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-4" },
                         React.createElement("div", null,
-                            React.createElement("h1", { className: "text-2xl font-bold text-slate-800" }, activeDataset.name),
+                            React.createElement("h1", { className: "text-xl sm:text-2xl font-bold text-slate-800" }, activeDataset.name),
                             React.createElement("p", { className: "text-slate-500 text-sm" }, `${activeDataset.data.length.toLocaleString()} Records • Uploaded ${activeDataset.uploadedAt.toLocaleTimeString()}`)
                         ),
-                        React.createElement("div", { className: "flex items-center space-x-3" },
-                            React.createElement("div", { className: "relative group" },
-                                React.createElement("button", { className: "flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors" },
+                        React.createElement("div", { className: "flex items-center w-full sm:w-auto" },
+                            // Tab focus handling helps dropdowns stay open on mobile devices
+                            React.createElement("div", { className: "relative group w-full sm:w-auto", tabIndex: "0" },
+                                React.createElement("button", { className: "w-full sm:w-auto flex items-center justify-between sm:justify-start space-x-2 px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors focus:ring-2 focus:ring-blue-500 focus:outline-none" },
                                     React.createElement("span", null, "View: ", React.createElement("span", { className: "font-bold capitalize" }, activeDataset.type)),
                                     React.createElement(ChevronDown, { size: 14 })
                                 ),
-                                React.createElement("div", { className: "absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden hidden group-hover:block z-10" },
-                                    React.createElement("button", { onClick: () => updateDatasetType(activeDataset.id, 'enrollment'), className: "w-full text-left px-4 py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(GraduationCap, { size: 14, className: "text-indigo-500" }), React.createElement("span", null, "Enrollment")),
-                                    React.createElement("button", { onClick: () => updateDatasetType(activeDataset.id, 'suspension'), className: "w-full text-left px-4 py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(AlertTriangle, { size: 14, className: "text-orange-500" }), React.createElement("span", null, "Suspension")),
-                                    React.createElement("button", { onClick: () => updateDatasetType(activeDataset.id, 'absenteeism'), className: "w-full text-left px-4 py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(Clock, { size: 14, className: "text-red-500" }), React.createElement("span", null, "Absenteeism")),
-                                    React.createElement("button", { onClick: () => updateDatasetType(activeDataset.id, 'generic'), className: "w-full text-left px-4 py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(FileText, { size: 14, className: "text-slate-500" }), React.createElement("span", null, "Raw Data"))
+                                React.createElement("div", { className: "absolute right-0 mt-2 w-full sm:w-48 bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden hidden group-hover:block group-focus-within:block z-10" },
+                                    React.createElement("button", { onClick: () => { updateDatasetType(activeDataset.id, 'enrollment'); document.activeElement.blur(); }, className: "w-full text-left px-4 py-3 sm:py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(GraduationCap, { size: 14, className: "text-indigo-500" }), React.createElement("span", null, "Enrollment")),
+                                    React.createElement("button", { onClick: () => { updateDatasetType(activeDataset.id, 'suspension'); document.activeElement.blur(); }, className: "w-full text-left px-4 py-3 sm:py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(AlertTriangle, { size: 14, className: "text-orange-500" }), React.createElement("span", null, "Suspension")),
+                                    React.createElement("button", { onClick: () => { updateDatasetType(activeDataset.id, 'absenteeism'); document.activeElement.blur(); }, className: "w-full text-left px-4 py-3 sm:py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(Clock, { size: 14, className: "text-red-500" }), React.createElement("span", null, "Absenteeism")),
+                                    React.createElement("button", { onClick: () => { updateDatasetType(activeDataset.id, 'generic'); document.activeElement.blur(); }, className: "w-full text-left px-4 py-3 sm:py-2 text-sm hover:bg-slate-50 flex items-center space-x-2" }, React.createElement(FileText, { size: 14, className: "text-slate-500" }), React.createElement("span", null, "Raw Data"))
                                 )
                             )
                         )
@@ -656,43 +660,71 @@
                 );
             };
 
-            return React.createElement("div", { className: "flex h-screen bg-slate-50 font-sans text-slate-900" },
-                React.createElement("aside", { className: "w-64 bg-slate-900 text-white flex flex-col shadow-xl flex-shrink-0" },
-                    React.createElement("div", { className: "p-6 border-b border-slate-700" },
-                        React.createElement("div", { className: "flex items-center space-x-3" },
-                            React.createElement("div", { className: "bg-blue-600 p-2 rounded-lg" }, React.createElement(Database, { size: 20, className: "text-white" })),
-                            React.createElement("span", { className: "font-bold text-lg tracking-tight" }, "VibeDash")
-                        )
+            return React.createElement("div", { className: "flex flex-col md:flex-row h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden w-full" },
+                
+                // Mobile Top Header Bar
+                React.createElement("div", { className: "md:hidden flex-shrink-0 bg-slate-900 text-white flex justify-between items-center p-4 z-20 shadow-md" },
+                    React.createElement("div", { className: "flex items-center space-x-3" },
+                        React.createElement("div", { className: "bg-blue-600 p-1.5 rounded-lg" }, React.createElement(Database, { size: 18, className: "text-white" })),
+                        React.createElement("span", { className: "font-bold text-lg tracking-tight" }, "VibeDash")
                     ),
-                    React.createElement("nav", { className: "flex-1 overflow-y-auto p-4 space-y-2" },
-                        React.createElement("button", { onClick: () => setActiveTab('home'), className: `w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'home' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}` },
-                            React.createElement(LayoutDashboard, { size: 18 }),
-                            React.createElement("span", { className: "font-medium" }, "Dashboard Home")
-                        ),
-                        React.createElement("div", { className: "mt-8 mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider" }, "Datasets"),
-                        datasets.length === 0 ? React.createElement("div", { className: "px-4 py-2 text-sm text-slate-600 italic" }, "No data uploaded yet") :
-                        datasets.map(ds => 
-                            React.createElement("div", { key: ds.id, onClick: () => setActiveTab(ds.id), className: `group w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all cursor-pointer ${activeTab === ds.id ? 'bg-slate-800 text-white border-l-4 border-blue-500' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}` },
-                                React.createElement("div", { className: "flex items-center space-x-3 truncate overflow-hidden" },
-                                    ds.type === 'enrollment' ? React.createElement(School, { size: 16, className: "flex-shrink-0 text-indigo-400" }) :
-                                    ds.type === 'suspension' ? React.createElement(AlertTriangle, { size: 16, className: "flex-shrink-0 text-orange-400" }) :
-                                    ds.type === 'absenteeism' ? React.createElement(Clock, { size: 16, className: "flex-shrink-0 text-red-400" }) :
-                                    React.createElement(FileText, { size: 16, className: "flex-shrink-0 text-slate-400" }),
-                                    React.createElement("span", { className: "truncate text-sm", title: ds.name }, ds.name)
-                                ),
-                                React.createElement("button", { onClick: (e) => deleteDataset(e, ds.id), className: `p-1.5 rounded-md hover:bg-red-900/50 hover:text-red-400 transition-all flex-shrink-0 ${activeTab === ds.id ? 'opacity-100 text-slate-400' : 'opacity-0 group-hover:opacity-100 text-slate-500'}` }, React.createElement(Trash2, { size: 14 }))
-                            )
-                        )
-                    ),
-                    React.createElement("div", { className: "p-4 border-t border-slate-700" },
-                        React.createElement("button", { onClick: () => document.getElementById('sidebar-upload').click(), className: "w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg transition-colors border border-slate-600 border-dashed" },
-                            React.createElement(Upload, { size: 16 }),
-                            React.createElement("span", { className: "text-sm font-medium" }, "Add Dataset")
-                        ),
-                        React.createElement("input", { id: "sidebar-upload", type: "file", className: "hidden", accept: ".csv", onChange: handleFileInput })
+                    React.createElement("button", { onClick: () => setIsMobileMenuOpen(true), className: "p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 transition" },
+                        React.createElement(Menu, { size: 24 })
                     )
                 ),
-                React.createElement("main", { className: "flex-1 overflow-auto p-8" }, renderActiveView())
+
+                // Main Container for Sidebar & Content
+                React.createElement("div", { className: "flex flex-1 overflow-hidden relative w-full" },
+                    
+                    // Dark Overlay for Mobile Sidebar
+                    isMobileMenuOpen && React.createElement("div", { 
+                        className: "fixed inset-0 bg-slate-900/60 z-40 md:hidden backdrop-blur-sm", 
+                        onClick: () => setIsMobileMenuOpen(false) 
+                    }),
+
+                    // Sidebar
+                    React.createElement("aside", { className: `absolute inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col shadow-2xl flex-shrink-0 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}` },
+                        React.createElement("div", { className: "p-6 border-b border-slate-700 flex justify-between items-center" },
+                            React.createElement("div", { className: "flex items-center space-x-3" },
+                                React.createElement("div", { className: "bg-blue-600 p-2 rounded-lg" }, React.createElement(Database, { size: 20, className: "text-white" })),
+                                React.createElement("span", { className: "font-bold text-lg tracking-tight" }, "VibeDash")
+                            ),
+                            React.createElement("button", { onClick: () => setIsMobileMenuOpen(false), className: "md:hidden p-1 text-slate-400 hover:text-white rounded-md hover:bg-slate-800 transition" },
+                                React.createElement(X, { size: 20 })
+                            )
+                        ),
+                        React.createElement("nav", { className: "flex-1 overflow-y-auto p-4 space-y-2" },
+                            React.createElement("button", { onClick: () => { setActiveTab('home'); setIsMobileMenuOpen(false); }, className: `w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'home' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}` },
+                                React.createElement(LayoutDashboard, { size: 18 }),
+                                React.createElement("span", { className: "font-medium" }, "Dashboard Home")
+                            ),
+                            React.createElement("div", { className: "mt-8 mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider" }, "Datasets"),
+                            datasets.length === 0 ? React.createElement("div", { className: "px-4 py-2 text-sm text-slate-600 italic" }, "No data uploaded yet") :
+                            datasets.map(ds => 
+                                React.createElement("div", { key: ds.id, onClick: () => { setActiveTab(ds.id); setIsMobileMenuOpen(false); }, className: `group w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all cursor-pointer ${activeTab === ds.id ? 'bg-slate-800 text-white border-l-4 border-blue-500' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}` },
+                                    React.createElement("div", { className: "flex items-center space-x-3 truncate overflow-hidden" },
+                                        ds.type === 'enrollment' ? React.createElement(School, { size: 16, className: "flex-shrink-0 text-indigo-400" }) :
+                                        ds.type === 'suspension' ? React.createElement(AlertTriangle, { size: 16, className: "flex-shrink-0 text-orange-400" }) :
+                                        ds.type === 'absenteeism' ? React.createElement(Clock, { size: 16, className: "flex-shrink-0 text-red-400" }) :
+                                        React.createElement(FileText, { size: 16, className: "flex-shrink-0 text-slate-400" }),
+                                        React.createElement("span", { className: "truncate text-sm", title: ds.name }, ds.name)
+                                    ),
+                                    React.createElement("button", { onClick: (e) => deleteDataset(e, ds.id), className: `p-1.5 rounded-md hover:bg-red-900/50 hover:text-red-400 transition-all flex-shrink-0 ${activeTab === ds.id ? 'opacity-100 text-slate-400' : 'opacity-0 group-hover:opacity-100 text-slate-500'}` }, React.createElement(Trash2, { size: 14 }))
+                                )
+                            )
+                        ),
+                        React.createElement("div", { className: "p-4 border-t border-slate-700" },
+                            React.createElement("button", { onClick: () => document.getElementById('sidebar-upload').click(), className: "w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 md:py-2 rounded-lg transition-colors border border-slate-600 border-dashed" },
+                                React.createElement(Upload, { size: 16 }),
+                                React.createElement("span", { className: "text-sm font-medium" }, "Add Dataset")
+                            ),
+                            React.createElement("input", { id: "sidebar-upload", type: "file", className: "hidden", accept: ".csv", onChange: handleFileInput })
+                        )
+                    ),
+                    
+                    // Main Content Area
+                    React.createElement("main", { className: "flex-1 overflow-auto p-4 sm:p-6 md:p-8 w-full" }, renderActiveView())
+                )
             );
         }
 
