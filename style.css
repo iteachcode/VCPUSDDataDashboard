@@ -15,6 +15,15 @@ header, footer {
   padding: 1rem;
 }
 
+#feedList.loading p {
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 50%, 100% { opacity: 1; }
+  25%, 75% { opacity: 0.4; }
+}
+
 article {
   background: white;
   margin: 0.5rem 0;
