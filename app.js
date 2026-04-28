@@ -13,8 +13,20 @@ let lastFetchTime = parseInt(localStorage.getItem('lastFetchTime')) || 0;
 
 const feedList = document.getElementById('feedList');
 const refreshButton = document.getElementById('refreshFeeds');
+const lastRefreshEl = document.getElementById('lastRefresh');
 const addFeedButton = document.getElementById('addFeed');
 const newFeedInput = document.getElementById('newFeedUrl');
+
+document.addEventListener('DOMContentLoaded', () => {
+  const savedTime = localStorage.getItem('lastRefreshTime');
+  if (savedTime) {
+    lastRefreshEl.textContent = `Last updated: ${savedTime}`;
+  }
+});
+
+refreshButton.addEventListener('click', () => {
+  fetchFeeds();
+});
 
 async function fetchFeed(url) {
   const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`);
@@ -81,3 +93,16 @@ window.addEventListener('load', () => {
   }
   refreshFeeds();
 });
+
+const now = new Date();
+  const formattedTime = now.toLocaleString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  lastRefreshEl.textContent = `Last updated: ${formattedTime}`;
+  localStorage.setItem('lastRefreshTime', formattedTime);
+}
