@@ -24,10 +24,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-refreshButton.addEventListener('click', () => {
-  fetchFeeds();
-});
-
 async function fetchFeed(url) {
   const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`);
   return response.json();
@@ -71,10 +67,24 @@ async function refreshFeeds() {
     });
   }
 
+  // Update fetch timestamps
   lastFetchTime = Date.now();
   localStorage.setItem('lastFetchTime', lastFetchTime);
+
+  const now = new Date();
+  const formattedTime = now.toLocaleString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  lastRefreshEl.textContent = `Last updated: ${formattedTime}`;
+  localStorage.setItem('lastRefreshTime', formattedTime);
 }
 
+// Attach event listeners
 refreshButton.addEventListener('click', refreshFeeds);
 
 addFeedButton.addEventListener('click', () => {
@@ -93,16 +103,3 @@ window.addEventListener('load', () => {
   }
   refreshFeeds();
 });
-
-const now = new Date();
-  const formattedTime = now.toLocaleString([], {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-
-  lastRefreshEl.textContent = `Last updated: ${formattedTime}`;
-  localStorage.setItem('lastRefreshTime', formattedTime);
-}
