@@ -27,3 +27,14 @@ article h2 {
   font-size: 1.1em;
   margin-bottom: 0.5em;
 }
+
+.refresh-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.last-refresh {
+  font-size: 0.8em;
+  color: #666;
+}
