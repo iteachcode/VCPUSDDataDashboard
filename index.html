@@ -10,7 +10,10 @@
 <body>
   <header>
     <h1>My RSS Reader</h1>
-    <button id="refreshFeeds">Refresh</button>
+     <div class="refresh-container">
+    <button id="refreshButton">🔄 Refresh</button>
+    <span id="lastRefresh" class="last-refresh">Last updated: Never</span>
+  </div>
   </header>
 
   <section id="feedList"></section>
