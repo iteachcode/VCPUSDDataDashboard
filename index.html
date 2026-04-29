@@ -1,26 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My RSS Reader</title>
-  <link rel="stylesheet" href="style.css" />
-  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
     <h1>My RSS Reader</h1>
-     <div class="refresh-container">
-    <button id="refreshButton">🔄 Refresh</button>
-    <span id="lastRefresh" class="last-refresh">Last updated: Never</span>
-  </div>
   </header>
 
-  <section id="feedList"></section>
+  <main>
+    <section id="homePage" class="page active">
+      <div class="refresh-container">
+        <button id="refreshFeeds">🔄 Refresh</button>
+        <span id="lastRefresh" class="last-refresh">Last updated: Never</span>
+      </div>
 
-  <footer>
-    <input type="url" id="newFeedUrl" placeholder="Add new feed URL" />
-    <button id="addFeed">Add Feed</button>
+      <div id="feedList"></div>
+
+      <div class="add-feed">
+        <input type="url" id="newFeedUrl" placeholder="Add feed URL">
+        <button id="addFeed">Add Feed</button>
+      </div>
+    </section>
+
+    <section id="libraryPage" class="page">
+      <h2>Your RSS Feeds</h2>
+      <ul id="libraryList"></ul>
+      <div id="libraryFeedItems"></div>
+    </section>
+  </main>
+
+  <footer class="bottom-nav">
+    <button id="navHome" class="active">🏠 Home</button>
+    <button id="navLibrary">📚 Library</button>
   </footer>
 
   <script src="app.js"></script>
